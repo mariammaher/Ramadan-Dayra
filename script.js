@@ -4,7 +4,7 @@ const RAMADAN_START = "2026-02-18";
 const RAMADAN_END = "2026-03-19";
 const RAMADAN_DATES = buildDateRange(RAMADAN_START, RAMADAN_END);
 const RAMADAN_RANGE_LABEL = "Feb 18 - Mar 19, 2026";
-const CLOUD_SYNC_INTERVAL_MS = 15000;
+const CLOUD_SYNC_INTERVAL_MS = 5000;
 const ADMIN_PIN = "2108";
 
 // GitHub-only sync (no external backend service):
@@ -217,6 +217,16 @@ function bindEvents() {
     event.preventDefault();
     void addSharedEvent();
   });
+
+  [el.dayEventsList, el.monthEventsList, el.mobileDayEventsList].forEach((container) => {
+    container.addEventListener("click", (event) => {
+      const deleteBtn = event.target.closest("[data-delete-event-id]");
+      if (!deleteBtn) return;
+      const eventId = deleteBtn.dataset.deleteEventId;
+      if (!eventId) return;
+      void deleteEventById(eventId);
+    });
+  });
 }
 
 async function createProfile() {
@@ -370,6 +380,8 @@ async function addPersonalEvent() {
         state.lastCloudError ? ` (${state.lastCloudError})` : ""
       }.`
     );
+  } else {
+    await syncProfilesFromCloud({ force: true });
   }
 }
 
@@ -434,6 +446,7 @@ async function addSharedEvent() {
 
   const synced = await saveSharedEventsToCloud();
   if (synced) {
+    await syncProfilesFromCloud({ force: true });
     el.adminHint.textContent = "Shared event added and synced for everyone.";
   } else {
     el.adminHint.textContent = `Shared event added locally only${
@@ -563,6 +576,11 @@ function renderAgendaItem(event, includeDate) {
   const className = event.category === "Sohour" ? "sohour" : "iftar";
   const sourceClass = event.isShared ? "source-shared" : "source-personal";
   const sourceLabel = event.isShared ? "Shared" : "Personal";
+  const deleteControl = canDeleteEvent(event)
+    ? `<button type="button" class="event-delete-btn" data-delete-event-id="${escapeHtml(
+        event.id
+      )}">Delete</button>`
+    : "";
   const date = parseDate(event.date);
   const shortDate = new Date(date.year, date.month - 1, date.day).toLocaleDateString(
     "en-US",
@@ -579,11 +597,86 @@ function renderAgendaItem(event, includeDate) {
         <span class="tag-group">
           <span class="tag ${className}">${event.category}</span>
           <span class="tag ${sourceClass}">${sourceLabel}</span>
+          ${deleteControl}
         </span>
       </div>
       <p>${escapeHtml(detailsText)}</p>
     </li>
   `;
+}
+
+function canDeleteEvent(event) {
+  if (!event || typeof event !== "object") return false;
+  if (event.isShared) return state.isAdminUnlocked;
+  return Boolean(state.currentUser) && event.owner === state.currentUser;
+}
+
+function getCurrentContextEventById(eventId) {
+  const shared = state.sharedEvents.find((event) => event.id === eventId);
+  if (shared) return shared;
+
+  if (!state.currentUser) return null;
+  return (
+    (state.personalEventsByUser[state.currentUser] || []).find(
+      (event) => event.id === eventId
+    ) || null
+  );
+}
+
+async function deleteEventById(eventId) {
+  const eventToDelete = getCurrentContextEventById(eventId);
+  if (!eventToDelete) return;
+
+  if (eventToDelete.isShared && !state.isAdminUnlocked) {
+    el.adminHint.textContent = "Only admin can delete shared events.";
+    return;
+  }
+
+  if (!eventToDelete.isShared && !state.currentUser) {
+    updateHint("Unlock your profile first.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Delete "${eventToDelete.title}" on ${eventToDelete.date}?`
+  );
+  if (!confirmed) return;
+
+  if (eventToDelete.isShared) {
+    state.sharedEvents = state.sharedEvents.filter((event) => event.id !== eventId);
+    saveState();
+    renderAll();
+
+    const synced = await saveSharedEventsToCloud();
+    if (synced) {
+      await syncProfilesFromCloud({ force: true });
+      el.adminHint.textContent = "Shared event deleted and synced for everyone.";
+    } else {
+      el.adminHint.textContent = `Shared event deleted locally only${
+        state.lastCloudError ? ` (${state.lastCloudError})` : ""
+      }.`;
+    }
+    return;
+  }
+
+  const currentEvents = state.personalEventsByUser[state.currentUser] || [];
+  state.personalEventsByUser[state.currentUser] = currentEvents.filter(
+    (event) => event.id !== eventId
+  );
+  saveState();
+  renderAll();
+
+  const synced = await savePersonalEventsToCloud(state.currentUser);
+  if (synced) {
+    await syncProfilesFromCloud({ force: true });
+    updateHint("Personal event deleted and synced.");
+  } else {
+    updateHint(
+      `Personal event deleted locally only${
+        state.lastCloudError ? ` (${state.lastCloudError})` : ""
+      }.`
+    );
+  }
 }
 
 function openDayDetailsModal(date) {
