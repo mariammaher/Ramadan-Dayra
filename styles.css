@@ -318,6 +318,18 @@ button:hover {
   margin: 8px 0;
 }
 
+.calendar-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.calendar-scroll .weekdays,
+.calendar-scroll .calendar-grid {
+  min-width: 650px;
+}
+
 .weekday {
   text-align: center;
   color: var(--text-soft);
@@ -724,9 +736,9 @@ label {
   }
 
   .day-cell {
-    min-height: 68px;
+    min-height: 82px;
     border-radius: 10px;
-    padding: 4px;
+    padding: 5px;
   }
 
   .day-cell:hover {
@@ -734,24 +746,35 @@ label {
   }
 
   .day-head {
-    justify-content: center;
+    justify-content: space-between;
     gap: 4px;
   }
 
   .day-number {
-    font-size: 1.07rem;
+    font-size: 1.02rem;
     line-height: 1;
   }
 
   .day-month {
-    display: none;
+    font-size: 0.62rem;
   }
 
   .day-cell.has-events .mobile-event-count {
-    display: inline-flex;
+    display: none;
   }
 
   .pill-row {
+    display: flex;
+    margin-top: 4px;
+    gap: 3px;
+  }
+
+  .pill {
+    font-size: 0.62rem;
+    padding: 2px 5px;
+  }
+
+  .pill.more {
     display: none;
   }
 
