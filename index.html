@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Reem+Kufi+Fun:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260212-3" />
+    <link rel="stylesheet" href="styles.css?v=20260212-4" />
   </head>
   <body>
     <div class="backdrop">
@@ -166,6 +166,62 @@
             </form>
           </section>
 
+          <section class="admin-card card">
+            <h3>Admin Shared Events</h3>
+            <div class="admin-unlock">
+              <input
+                id="adminPinInput"
+                type="password"
+                inputmode="numeric"
+                maxlength="4"
+                minlength="4"
+                pattern="[0-9]{4}"
+                oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)"
+                placeholder="Admin PIN"
+                aria-label="Admin PIN"
+              />
+              <button id="adminUnlockBtn" type="button">Unlock Admin</button>
+            </div>
+            <p id="adminHint" class="admin-hint">Locked. Enter admin PIN to edit shared events.</p>
+
+            <form id="sharedEventForm">
+              <label>
+                Shared Event Name
+                <input
+                  id="sharedEventTitle"
+                  type="text"
+                  placeholder="Ex: Dayra at Kareem's"
+                  required
+                />
+              </label>
+
+              <label>
+                Category
+                <select id="sharedEventCategory" required>
+                  <option value="Iftar">Iftar</option>
+                  <option value="Sohour">Sohour</option>
+                </select>
+              </label>
+
+              <label>
+                Date
+                <input id="sharedEventDate" type="date" required />
+              </label>
+
+              <label>
+                Time (optional)
+                <input id="sharedEventTime" type="time" />
+              </label>
+
+              <label>
+                Place (optional)
+                <input id="sharedEventPlace" type="text" placeholder="Ex: Sheikh Zayed" />
+              </label>
+
+              <button id="saveSharedEventBtn" type="submit">Add Shared Event</button>
+            </form>
+          </section>
+
           <section class="agenda-card card">
             <h3 id="agendaDateLabel">Selected Day</h3>
             <ul id="dayEventsList" class="agenda-list"></ul>
@@ -186,6 +242,6 @@
       </div>
     </div>
 
-    <script src="script.js?v=20260212-3"></script>
+    <script src="script.js?v=20260212-4"></script>
   </body>
 </html>
