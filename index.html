@@ -48,7 +48,10 @@
             type="password"
             inputmode="numeric"
             maxlength="4"
+            minlength="4"
+            required
             pattern="[0-9]{4}"
+            oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)"
             placeholder="Create 4-digit PIN"
             aria-label="Create profile PIN"
           />
@@ -66,7 +69,10 @@
               type="password"
               inputmode="numeric"
               maxlength="4"
+              minlength="4"
+              required
               pattern="[0-9]{4}"
+              oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,4)"
               placeholder="4-digit PIN"
               aria-label="Enter profile PIN"
             />
@@ -76,6 +82,9 @@
 
         <p id="currentUserBadge" class="current-user">No profile selected.</p>
         <p id="authHint" class="auth-hint"></p>
+        <p class="security-note">
+          Fun mode notice: profile PINs are stored in plain text for easy sharing.
+        </p>
       </section>
 
       <section class="layout">
@@ -86,10 +95,7 @@
           </div>
 
           <div class="legend">
-            <span class="legend-item">
-              <i class="dot shared"></i>
-              Shared Dayra Event
-            </span>
+            <span class="legend-label">Type</span>
             <span class="legend-item">
               <i class="dot iftar"></i>
               Iftar
@@ -97,6 +103,16 @@
             <span class="legend-item">
               <i class="dot sohour"></i>
               Sohour
+            </span>
+            <span class="legend-divider"></span>
+            <span class="legend-label">Source</span>
+            <span class="legend-item">
+              <i class="source-chip shared"></i>
+              Shared
+            </span>
+            <span class="legend-item">
+              <i class="source-chip personal"></i>
+              Personal
             </span>
           </div>
 
@@ -157,6 +173,16 @@
         </aside>
       </section>
     </main>
+
+    <div id="dayDetailsModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="mobileModalTitle">
+        <div class="modal-head">
+          <h3 id="mobileModalTitle">Day Details</h3>
+          <button id="closeModalBtn" class="close-modal-btn" type="button">Close</button>
+        </div>
+        <ul id="mobileDayEventsList" class="agenda-list"></ul>
+      </div>
+    </div>
 
     <script src="script.js"></script>
   </body>
