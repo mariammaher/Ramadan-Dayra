@@ -6,9 +6,13 @@ const RAMADAN_DATES = buildDateRange(RAMADAN_START, RAMADAN_END);
 const RAMADAN_RANGE_LABEL = "Feb 18 - Mar 19, 2026";
 const CLOUD_SYNC_INTERVAL_MS = 15000;
 
-// Set this to your Firebase Realtime Database URL to sync profiles across devices.
-// Example: https://your-project-id-default-rtdb.firebaseio.com
-const FIREBASE_DB_URL = "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com";
+// GitHub-only sync (no external backend service):
+// 1) Create a PUBLIC gist with a file named "profiles.json" containing {"profiles":[]}
+// 2) Paste the Gist ID below.
+// 3) Paste a GitHub token with "gist" scope below if you want everyone to write shared profiles.
+const GITHUB_GIST_ID = "b2657e230ec6e682643fbcadb0f1661f";
+const GITHUB_TOKEN = "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";
+const GIST_FILENAME = "profiles.json";
 
 const DEFAULT_SHARED_EVENTS = [
   {
@@ -53,6 +57,7 @@ const state = {
   cloudConfigured: false,
   cloudHealthy: false,
   syncInFlight: false,
+  lastCloudError: "",
 };
 
 const el = {
@@ -79,6 +84,10 @@ const el = {
   agendaDateLabel: document.getElementById("agendaDateLabel"),
   dayEventsList: document.getElementById("dayEventsList"),
   monthEventsList: document.getElementById("monthEventsList"),
+  dayDetailsModal: document.getElementById("dayDetailsModal"),
+  mobileModalTitle: document.getElementById("mobileModalTitle"),
+  mobileDayEventsList: document.getElementById("mobileDayEventsList"),
+  closeModalBtn: document.getElementById("closeModalBtn"),
 };
 
 init();
@@ -94,6 +103,14 @@ async function init() {
 }
 
 function bindEvents() {
+  el.createPinInput.addEventListener("input", () => {
+    el.createPinInput.value = sanitizePinInput(el.createPinInput.value);
+  });
+
+  el.accessPinInput.addEventListener("input", () => {
+    el.accessPinInput.value = sanitizePinInput(el.accessPinInput.value);
+  });
+
   el.joinBtn.addEventListener("click", () => {
     void createProfile();
   });
@@ -128,6 +145,26 @@ function bindEvents() {
     }
   });
 
+  el.closeModalBtn.addEventListener("click", closeDayDetailsModal);
+
+  el.dayDetailsModal.addEventListener("click", (event) => {
+    if (event.target === el.dayDetailsModal) {
+      closeDayDetailsModal();
+    }
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeDayDetailsModal();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (!isCompactView()) {
+      closeDayDetailsModal();
+    }
+  });
+
   el.calendarGrid.addEventListener("click", (event) => {
     const cell = event.target.closest(".day-cell");
     if (!cell || cell.classList.contains("placeholder")) return;
@@ -143,6 +180,10 @@ function bindEvents() {
     if (state.currentUser) {
       el.eventDate.value = date;
     }
+
+    if (isCompactView()) {
+      openDayDetailsModal(date);
+    }
   });
 
   el.eventForm.addEventListener("submit", (event) => {
@@ -153,7 +194,7 @@ function bindEvents() {
 
 async function createProfile() {
   const name = normalizeName(el.nameInput.value);
-  const pin = el.createPinInput.value.trim();
+  const pin = sanitizePinInput(el.createPinInput.value);
 
   if (!name) {
     updateAuthHint("Type your name to create a profile.");
@@ -197,13 +238,17 @@ async function createProfile() {
     await syncProfilesFromCloud({ force: true });
     updateAuthHint(`Profile created and synced for everyone: ${name}.`);
   } else {
-    updateAuthHint("Profile created on this device only. Configure cloud sync to share profiles.");
+    updateAuthHint(
+      `Profile created locally. Shared sync failed${
+        state.lastCloudError ? ` (${state.lastCloudError})` : ""
+      }. If you already added token, push/redeploy then refresh.`
+    );
   }
 }
 
 async function unlockProfile() {
   const user = state.pendingUser || el.userSelect.value;
-  const pin = el.accessPinInput.value.trim();
+  const pin = sanitizePinInput(el.accessPinInput.value);
 
   if (!user) {
     updateAuthHint("Select a profile first.");
@@ -379,8 +424,8 @@ function renderCalendar() {
 
 function renderEventPill(event) {
   const categoryClass = event.category === "Sohour" ? "sohour" : "iftar";
-  const sharedClass = event.isShared ? "shared" : "";
-  return `<span class="pill ${categoryClass} ${sharedClass}">${escapeHtml(
+  const sourceClass = event.isShared ? "shared" : "personal";
+  return `<span class="pill ${categoryClass} ${sourceClass}">${escapeHtml(
     event.title
   )}</span>`;
 }
@@ -411,24 +456,52 @@ function renderAgenda() {
 
 function renderAgendaItem(event, includeDate) {
   const className = event.category === "Sohour" ? "sohour" : "iftar";
+  const sourceClass = event.isShared ? "source-shared" : "source-personal";
+  const sourceLabel = event.isShared ? "Shared" : "Personal";
   const date = parseDate(event.date);
   const shortDate = new Date(date.year, date.month - 1, date.day).toLocaleDateString(
     "en-US",
     { month: "short", day: "numeric" }
   );
-  const timePart = event.time ? ` at ${event.time}` : "";
-  const placePart = event.place ? ` | ${event.place}` : "";
-  const origin = event.isShared ? "Shared" : "Personal";
-
+  const detailParts = [];
+  if (event.time) detailParts.push(event.time);
+  if (event.place) detailParts.push(event.place);
+  const detailsText = detailParts.length ? detailParts.join(" | ") : "No set time/place";
   return `
     <li class="agenda-item">
       <div class="top">
         <span>${includeDate ? escapeHtml(event.title) : `${shortDate} - ${escapeHtml(event.title)}`}</span>
-        <span class="tag ${className}">${event.category}</span>
+        <span class="tag-group">
+          <span class="tag ${className}">${event.category}</span>
+          <span class="tag ${sourceClass}">${sourceLabel}</span>
+        </span>
       </div>
-      <p>${origin}${timePart}${placePart}</p>
+      <p>${escapeHtml(detailsText)}</p>
     </li>
   `;
+}
+
+function openDayDetailsModal(date) {
+  const parsed = parseDate(date);
+  const dateObj = new Date(parsed.year, parsed.month - 1, parsed.day);
+  const events = getEventsForDate(date);
+  el.mobileModalTitle.textContent = dateObj.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
+  el.mobileDayEventsList.innerHTML = events.length
+    ? events.map((event) => renderAgendaItem(event, true)).join("")
+    : `<li class="agenda-item empty">No events on this day yet.</li>`;
+
+  el.dayDetailsModal.classList.remove("hidden");
+  el.dayDetailsModal.setAttribute("aria-hidden", "false");
+}
+
+function closeDayDetailsModal() {
+  el.dayDetailsModal.classList.add("hidden");
+  el.dayDetailsModal.setAttribute("aria-hidden", "true");
 }
 
 function refreshFormState() {
@@ -545,26 +618,33 @@ function applyRamadanConstraints() {
   state.cloudConfigured = isCloudConfigured();
 }
 
-function normalizeDbUrl(url) {
-  return url.trim().replace(/\/+$/, "");
-}
-
 function isCloudConfigured() {
-  const normalized = normalizeDbUrl(FIREBASE_DB_URL);
-  return Boolean(normalized) && !normalized.includes("YOUR_PROJECT_ID");
+  const gistId = String(GITHUB_GIST_ID || "").trim();
+  return Boolean(gistId) && !gistId.includes("YOUR_PUBLIC_GIST_ID");
 }
 
-function getProfilesEndpoint() {
-  return `${normalizeDbUrl(FIREBASE_DB_URL)}/profiles`;
+function hasWriteToken() {
+  const token = String(GITHUB_TOKEN || "").trim();
+  return Boolean(token) && !token.includes("YOUR_GITHUB_GIST_TOKEN");
+}
+
+function getGistEndpoint() {
+  return `https://api.github.com/gists/${encodeURIComponent(
+    String(GITHUB_GIST_ID || "").trim()
+  )}`;
+}
+
+function buildGitHubHeaders(includeWriteAuth) {
+  const headers = { Accept: "application/vnd.github+json" };
+  if (includeWriteAuth && hasWriteToken()) {
+    headers.Authorization = `Bearer ${String(GITHUB_TOKEN).trim()}`;
+  }
+  return headers;
 }
 
 function findExistingUserName(candidate) {
   const lowered = candidate.toLowerCase();
   return state.users.find((name) => name.toLowerCase() === lowered) || "";
-}
-
-function profileKey(name) {
-  return encodeURIComponent(name.toLowerCase());
 }
 
 function startProfileSync() {
@@ -580,7 +660,7 @@ async function syncProfilesFromCloud(options = {}) {
   if (!isCloudConfigured()) {
     state.cloudConfigured = false;
     if (announce) {
-      updateAuthHint("Shared profile sync is off. Add your Firebase URL in script.js.");
+      updateAuthHint("Shared profile sync is off. Add your GitHub Gist ID in script.js.");
     }
     return false;
   }
@@ -589,29 +669,40 @@ async function syncProfilesFromCloud(options = {}) {
   state.syncInFlight = true;
 
   try {
-    const response = await fetch(`${getProfilesEndpoint()}.json`, {
+    const response = await fetch(getGistEndpoint(), {
+      headers: buildGitHubHeaders(false),
       cache: "no-store",
     });
 
     if (!response.ok) {
+      state.lastCloudError = `read ${response.status}`;
       throw new Error(`Cloud fetch failed with ${response.status}`);
     }
 
     const payload = (await response.json()) || {};
-    const cloudProfiles = extractCloudProfiles(payload);
+    const cloudProfiles = extractCloudProfilesFromGist(payload);
     mergeCloudProfiles(cloudProfiles);
 
     state.cloudConfigured = true;
     state.cloudHealthy = true;
+    state.lastCloudError = "";
     saveState();
     renderUserSection();
     refreshFormState();
 
     if (announce) {
       if (Object.keys(cloudProfiles).length > 0) {
-        updateAuthHint(`Loaded ${state.users.length} shared profiles.`);
+        updateAuthHint(
+          hasWriteToken()
+            ? `Loaded ${state.users.length} shared profiles.`
+            : `Loaded ${state.users.length} shared profiles (read-only, add token to allow creating shared profiles).`
+        );
       } else {
-        updateAuthHint("No shared profiles yet. Create the first one.");
+        updateAuthHint(
+          hasWriteToken()
+            ? "No shared profiles yet. Create the first one."
+            : "No shared profiles yet. Add a GitHub token to create shared profiles."
+        );
       }
     }
 
@@ -619,6 +710,7 @@ async function syncProfilesFromCloud(options = {}) {
   } catch (error) {
     state.cloudConfigured = true;
     state.cloudHealthy = false;
+    state.lastCloudError = "cannot reach gist";
     if (announce) {
       updateAuthHint("Could not reach shared profile storage. Using local profiles only.");
     }
@@ -628,18 +720,32 @@ async function syncProfilesFromCloud(options = {}) {
   }
 }
 
-function extractCloudProfiles(payload) {
+function extractCloudProfilesFromGist(payload) {
   const profiles = {};
   if (!payload || typeof payload !== "object") {
     return profiles;
   }
 
-  for (const value of Object.values(payload)) {
-    if (!value || typeof value !== "object") continue;
-    const name = normalizeName(String(value.name || ""));
-    const pin = String(value.pin || "").trim();
-    if (!name || !isValidPin(pin)) continue;
-    profiles[name] = pin;
+  const files = payload.files && typeof payload.files === "object" ? payload.files : {};
+  const profileFile = files[GIST_FILENAME];
+  const content =
+    profileFile && typeof profileFile.content === "string" ? profileFile.content : "";
+
+  if (!content) return profiles;
+
+  try {
+    const parsed = JSON.parse(content);
+    const list = Array.isArray(parsed?.profiles) ? parsed.profiles : [];
+
+    for (const item of list) {
+      if (!item || typeof item !== "object") continue;
+      const name = normalizeName(String(item.name || ""));
+      const pin = String(item.pin || "").trim();
+      if (!name || !isValidPin(pin)) continue;
+      profiles[name] = pin;
+    }
+  } catch (error) {
+    return profiles;
   }
 
   return profiles;
@@ -667,19 +773,63 @@ function mergeCloudProfiles(cloudProfiles) {
 
 async function saveProfileToCloud(name, pin) {
   if (!isCloudConfigured()) return false;
+  if (!hasWriteToken()) {
+    state.lastCloudError = "missing token";
+    return false;
+  }
 
   try {
-    const response = await fetch(`${getProfilesEndpoint()}/${profileKey(name)}.json`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        pin,
+    const fetchResponse = await fetch(getGistEndpoint(), {
+      headers: buildGitHubHeaders(false),
+      cache: "no-store",
+    });
+    if (!fetchResponse.ok) {
+      state.lastCloudError = `read ${fetchResponse.status}`;
+      return false;
+    }
+
+    const gist = await fetchResponse.json();
+    const existingProfiles = extractCloudProfilesFromGist(gist);
+    const mergedProfiles = { ...existingProfiles, [name]: pin };
+    const profileEntries = Object.entries(mergedProfiles)
+      .map(([profileName, profilePin]) => ({ name: profileName, pin: profilePin }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const fileContent = JSON.stringify(
+      {
+        profiles: profileEntries,
         updatedAt: new Date().toISOString(),
+        disclaimer:
+          "Fun mode only: pins are plain text and visible to anyone with gist access.",
+      },
+      null,
+      2
+    );
+
+    const writeResponse = await fetch(getGistEndpoint(), {
+      method: "PATCH",
+      headers: {
+        ...buildGitHubHeaders(true),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        files: {
+          [GIST_FILENAME]: {
+            content: fileContent,
+          },
+        },
       }),
     });
-    return response.ok;
+
+    if (!writeResponse.ok) {
+      state.lastCloudError = `write ${writeResponse.status}`;
+      return false;
+    }
+
+    state.lastCloudError = "";
+    return writeResponse.ok;
   } catch (error) {
+    state.lastCloudError = "network error";
     return false;
   }
 }
@@ -688,8 +838,19 @@ function normalizeName(value) {
   return value.trim().replace(/\s+/g, " ");
 }
 
+function sanitizePinInput(value) {
+  return String(value).replace(/\D/g, "").slice(0, 4);
+}
+
 function isValidPin(pin) {
   return /^\d{4}$/.test(pin);
+}
+
+function isCompactView() {
+  return (
+    window.matchMedia("(max-width: 900px)").matches ||
+    window.matchMedia("(pointer: coarse)").matches
+  );
 }
 
 function isRamadanDate(date) {
