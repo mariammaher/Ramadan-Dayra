@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>El Dayra | Ramadan Schedule</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Reem+Kufi+Fun:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="backdrop">
+      <div class="moon"></div>
+      <div class="glow glow-a"></div>
+      <div class="glow glow-b"></div>
+    </div>
+
+    <main class="app-shell">
+      <header class="hero">
+        <p class="eyebrow">Ramadan Planner</p>
+        <h1>El Dayra</h1>
+        <p class="hero-copy">
+          One calendar for the whole group. Shared Iftar/Sohour plans + each
+          person's own Ramadan agenda.
+        </p>
+      </header>
+
+      <section class="identity-card card">
+        <div class="identity-copy">
+          <h2>Who are you today?</h2>
+          <p>Create your profile with a 4-digit PIN, then unlock it to access your personal agenda.</p>
+        </div>
+
+        <div class="identity-form">
+          <input
+            id="nameInput"
+            type="text"
+            autocomplete="off"
+            placeholder="Type your name"
+            aria-label="Your name"
+          />
+          <input
+            id="createPinInput"
+            type="password"
+            inputmode="numeric"
+            maxlength="4"
+            pattern="[0-9]{4}"
+            placeholder="Create 4-digit PIN"
+            aria-label="Create profile PIN"
+          />
+          <button id="joinBtn" type="button">Create Profile</button>
+        </div>
+
+        <div class="identity-switch">
+          <label for="userSelect">Unlock Existing Profile</label>
+          <div class="access-row">
+            <select id="userSelect" aria-label="Pick profile">
+              <option value="">Select profile</option>
+            </select>
+            <input
+              id="accessPinInput"
+              type="password"
+              inputmode="numeric"
+              maxlength="4"
+              pattern="[0-9]{4}"
+              placeholder="4-digit PIN"
+              aria-label="Enter profile PIN"
+            />
+            <button id="accessBtn" type="button">Unlock</button>
+          </div>
+        </div>
+
+        <p id="currentUserBadge" class="current-user">No profile selected.</p>
+        <p id="authHint" class="auth-hint"></p>
+      </section>
+
+      <section class="layout">
+        <section class="calendar-card card">
+          <div class="calendar-top">
+            <h2 id="monthLabel">Ramadan 2026</h2>
+            <p id="rangeLabel" class="range-label"></p>
+          </div>
+
+          <div class="legend">
+            <span class="legend-item">
+              <i class="dot shared"></i>
+              Shared Dayra Event
+            </span>
+            <span class="legend-item">
+              <i class="dot iftar"></i>
+              Iftar
+            </span>
+            <span class="legend-item">
+              <i class="dot sohour"></i>
+              Sohour
+            </span>
+          </div>
+
+          <div class="weekdays" id="weekdays"></div>
+          <div id="calendarGrid" class="calendar-grid"></div>
+        </section>
+
+        <aside class="side-column">
+          <section class="planner-card card">
+            <h3>Add Personal Event</h3>
+            <form id="eventForm">
+              <label>
+                Event Name
+                <input
+                  id="eventTitle"
+                  type="text"
+                  placeholder="Ex: Family Iftar"
+                  required
+                />
+              </label>
+
+              <label>
+                Category
+                <select id="eventCategory" required>
+                  <option value="Iftar">Iftar</option>
+                  <option value="Sohour">Sohour</option>
+                </select>
+              </label>
+
+              <label>
+                Date
+                <input id="eventDate" type="date" required />
+              </label>
+
+              <label>
+                Time (optional)
+                <input id="eventTime" type="time" />
+              </label>
+
+              <label>
+                Place (optional)
+                <input id="eventPlace" type="text" placeholder="Ex: Downtown" />
+              </label>
+
+              <button id="saveEventBtn" type="submit">Save Personal Event</button>
+              <p id="formHint" class="form-hint">
+                Select your profile first to save events.
+              </p>
+            </form>
+          </section>
+
+          <section class="agenda-card card">
+            <h3 id="agendaDateLabel">Selected Day</h3>
+            <ul id="dayEventsList" class="agenda-list"></ul>
+            <h4>This Ramadan</h4>
+            <ul id="monthEventsList" class="agenda-list compact"></ul>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
