@@ -16,6 +16,11 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   font-family: "Manrope", sans-serif;
@@ -327,7 +332,7 @@ button:hover {
 
 .calendar-scroll .weekdays,
 .calendar-scroll .calendar-grid {
-  min-width: 650px;
+  min-width: 560px;
 }
 
 .weekday {
@@ -698,11 +703,11 @@ label {
   }
 
   .calendar-top h2 {
-    font-size: 1.45rem;
+    font-size: 1.28rem;
   }
 
   .range-label {
-    font-size: 1.02rem;
+    font-size: 0.95rem;
   }
 
   .legend {
@@ -782,7 +787,7 @@ label {
   select,
   button {
     min-height: 46px;
-    font-size: 1rem;
+    font-size: 16px;
   }
 
   .current-user {
@@ -791,7 +796,7 @@ label {
 
   .agenda-card h3,
   .planner-card h3 {
-    font-size: 1.7rem;
+    font-size: 1.35rem;
   }
 
   .agenda-item .top {
