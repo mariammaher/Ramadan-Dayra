@@ -350,6 +350,22 @@ button:hover {
   gap: 6px;
 }
 
+.mobile-event-count {
+  display: none;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  padding: 0 6px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(240, 199, 116, 0.22);
+  border: 1px solid rgba(240, 199, 116, 0.45);
+  color: var(--text-main);
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .pill-row {
   margin-top: 6px;
   display: flex;
@@ -517,38 +533,139 @@ label {
 }
 
 @media (max-width: 900px) {
+  .app-shell {
+    width: min(96vw, 680px);
+    margin: 16px auto 28px;
+    gap: 12px;
+  }
+
+  .hero {
+    padding: 18px 16px;
+  }
+
+  .card {
+    border-radius: 18px;
+  }
+
   .layout {
     grid-template-columns: 1fr;
   }
 
   .day-cell {
-    min-height: 90px;
+    min-height: 78px;
+    padding: 6px;
+  }
+
+  .planner-card,
+  .agenda-card,
+  .calendar-card,
+  .identity-card {
+    padding: 14px;
   }
 }
 
 @media (max-width: 620px) {
   .app-shell {
-    width: min(96vw, 540px);
+    width: calc(100vw - 12px);
+    margin: 10px auto 22px;
+    gap: 10px;
+  }
+
+  .hero {
+    padding: 14px;
+  }
+
+  h1 {
+    font-size: 1.9rem;
+  }
+
+  .hero-copy {
+    font-size: 0.9rem;
   }
 
   .calendar-top h2 {
-    font-size: 1.15rem;
+    font-size: 1.45rem;
+  }
+
+  .range-label {
+    font-size: 1.02rem;
+  }
+
+  .legend {
+    gap: 8px 12px;
+    padding-bottom: 6px;
+  }
+
+  .legend-item {
+    font-size: 0.82rem;
   }
 
   .weekdays {
-    gap: 5px;
+    gap: 4px;
+    margin: 4px 0 6px;
   }
 
   .calendar-grid {
-    gap: 5px;
+    gap: 4px;
   }
 
   .day-cell {
-    padding: 6px;
-    min-height: 80px;
+    min-height: 58px;
+    border-radius: 10px;
+    padding: 4px;
+  }
+
+  .day-cell:hover {
+    transform: none;
+  }
+
+  .day-head {
+    justify-content: center;
+    gap: 4px;
   }
 
   .day-number {
-    font-size: 0.8rem;
+    font-size: 1rem;
+    line-height: 1;
+  }
+
+  .day-month {
+    display: none;
+  }
+
+  .day-cell.has-events .mobile-event-count {
+    display: inline-flex;
+  }
+
+  .pill-row {
+    display: none;
+  }
+
+  input,
+  select,
+  button {
+    min-height: 46px;
+    font-size: 1rem;
+  }
+
+  .current-user {
+    font-size: 1rem;
+  }
+
+  .agenda-card h3,
+  .planner-card h3 {
+    font-size: 1.7rem;
+  }
+
+  .agenda-item .top {
+    font-size: 0.92rem;
+  }
+
+  .agenda-item p {
+    font-size: 0.87rem;
+  }
+
+  .access-row {
+    grid-template-columns: 1fr;
   }
 }
