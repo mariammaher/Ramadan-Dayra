@@ -1,4 +1,4 @@
-const STORAGE_KEY = "el_dayra_state_v1";
+const STORAGE_KEY = "el_dayra_state_v2";
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const RAMADAN_START = "2026-02-18";
 const RAMADAN_END = "2026-03-19";
@@ -171,17 +171,16 @@ function bindEvents() {
 
     const date = cell.dataset.date;
     if (!date || !isRamadanDate(date)) return;
+    const dayEvents = getEventsForDate(date);
 
     state.selectedDate = date;
     saveState();
     renderCalendar();
     renderAgenda();
 
-    if (state.currentUser) {
-      el.eventDate.value = date;
-    }
+    el.eventDate.value = date;
 
-    if (isCompactView()) {
+    if (isCompactView() && dayEvents.length > 0) {
       openDayDetailsModal(date);
     }
   });
@@ -752,13 +751,14 @@ function extractCloudProfilesFromGist(payload) {
 }
 
 function mergeCloudProfiles(cloudProfiles) {
-  const mergedUsers = new Set(state.users);
-  for (const name of Object.keys(cloudProfiles)) {
-    mergedUsers.add(name);
-    state.userPins[name] = cloudProfiles[name];
+  const freshUsers = Object.keys(cloudProfiles).sort((a, b) => a.localeCompare(b));
+  const freshPins = {};
+  for (const name of freshUsers) {
+    freshPins[name] = cloudProfiles[name];
   }
 
-  state.users = Array.from(mergedUsers).sort((a, b) => a.localeCompare(b));
+  state.users = freshUsers;
+  state.userPins = freshPins;
 
   if (state.pendingUser && !findExistingUserName(state.pendingUser)) {
     state.pendingUser = "";
