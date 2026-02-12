@@ -5,6 +5,7 @@ const RAMADAN_END = "2026-03-19";
 const RAMADAN_DATES = buildDateRange(RAMADAN_START, RAMADAN_END);
 const RAMADAN_RANGE_LABEL = "Feb 18 - Mar 19, 2026";
 const CLOUD_SYNC_INTERVAL_MS = 15000;
+const ADMIN_PIN = "2108";
 
 // GitHub-only sync (no external backend service):
 // 1) Create a PUBLIC gist with a file named "profiles.json" containing {"profiles":[]}
@@ -53,6 +54,8 @@ const state = {
   pendingUser: "",
   currentUser: "",
   personalEventsByUser: {},
+  sharedEvents: buildDefaultSharedEvents(),
+  isAdminUnlocked: false,
   selectedDate: RAMADAN_START,
   cloudConfigured: false,
   cloudHealthy: false,
@@ -88,6 +91,16 @@ const el = {
   mobileModalTitle: document.getElementById("mobileModalTitle"),
   mobileDayEventsList: document.getElementById("mobileDayEventsList"),
   closeModalBtn: document.getElementById("closeModalBtn"),
+  adminPinInput: document.getElementById("adminPinInput"),
+  adminUnlockBtn: document.getElementById("adminUnlockBtn"),
+  adminHint: document.getElementById("adminHint"),
+  sharedEventForm: document.getElementById("sharedEventForm"),
+  sharedEventTitle: document.getElementById("sharedEventTitle"),
+  sharedEventCategory: document.getElementById("sharedEventCategory"),
+  sharedEventDate: document.getElementById("sharedEventDate"),
+  sharedEventTime: document.getElementById("sharedEventTime"),
+  sharedEventPlace: document.getElementById("sharedEventPlace"),
+  saveSharedEventBtn: document.getElementById("saveSharedEventBtn"),
 };
 
 init();
@@ -109,6 +122,9 @@ function bindEvents() {
 
   el.accessPinInput.addEventListener("input", () => {
     el.accessPinInput.value = sanitizePinInput(el.accessPinInput.value);
+  });
+  el.adminPinInput.addEventListener("input", () => {
+    el.adminPinInput.value = sanitizePinInput(el.adminPinInput.value);
   });
 
   el.joinBtn.addEventListener("click", () => {
@@ -144,6 +160,13 @@ function bindEvents() {
       void unlockProfile();
     }
   });
+  el.adminPinInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      unlockAdmin();
+    }
+  });
+  el.adminUnlockBtn.addEventListener("click", unlockAdmin);
 
   el.closeModalBtn.addEventListener("click", closeDayDetailsModal);
 
@@ -187,7 +210,12 @@ function bindEvents() {
 
   el.eventForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    addPersonalEvent();
+    void addPersonalEvent();
+  });
+
+  el.sharedEventForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void addSharedEvent();
   });
 }
 
@@ -290,7 +318,7 @@ async function unlockProfile() {
   renderAll();
 }
 
-function addPersonalEvent() {
+async function addPersonalEvent() {
   if (!state.currentUser) {
     updateHint("Unlock your profile first to add personal events.");
     return;
@@ -325,7 +353,7 @@ function addPersonalEvent() {
 
   const list = state.personalEventsByUser[state.currentUser] || [];
   list.push(event);
-  state.personalEventsByUser[state.currentUser] = list;
+  state.personalEventsByUser[state.currentUser] = list.sort(compareEvents);
   state.selectedDate = date;
 
   el.eventForm.reset();
@@ -334,6 +362,84 @@ function addPersonalEvent() {
   updateHint("");
   saveState();
   renderAll();
+
+  const synced = await savePersonalEventsToCloud(state.currentUser);
+  if (!synced) {
+    updateHint(
+      `Saved on this device. Cloud sync failed${
+        state.lastCloudError ? ` (${state.lastCloudError})` : ""
+      }.`
+    );
+  }
+}
+
+function unlockAdmin() {
+  const pin = sanitizePinInput(el.adminPinInput.value);
+  if (!isValidPin(pin)) {
+    el.adminHint.textContent = "Admin PIN must be exactly 4 digits.";
+    return;
+  }
+
+  if (pin !== ADMIN_PIN) {
+    el.adminHint.textContent = "Incorrect admin PIN.";
+    return;
+  }
+
+  state.isAdminUnlocked = true;
+  el.adminPinInput.value = "";
+  el.adminHint.textContent = "Admin unlocked. You can now add shared events.";
+  refreshAdminState();
+}
+
+async function addSharedEvent() {
+  if (!state.isAdminUnlocked) {
+    el.adminHint.textContent = "Unlock admin first.";
+    return;
+  }
+
+  const title = el.sharedEventTitle.value.trim();
+  const category = el.sharedEventCategory.value;
+  const date = el.sharedEventDate.value;
+  const time = el.sharedEventTime.value;
+  const place = el.sharedEventPlace.value.trim();
+
+  if (!title || !date) {
+    el.adminHint.textContent = "Shared event name and date are required.";
+    return;
+  }
+
+  if (!isRamadanDate(date)) {
+    el.adminHint.textContent = `Date must be within Ramadan 2026 (${RAMADAN_RANGE_LABEL}).`;
+    return;
+  }
+
+  const sharedEvent = {
+    id: `shared-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    title,
+    category,
+    date,
+    time: time || "",
+    place: place || "",
+    isShared: true,
+  };
+
+  state.sharedEvents = [...state.sharedEvents, sharedEvent].sort(compareEvents);
+  state.selectedDate = date;
+
+  el.sharedEventForm.reset();
+  el.sharedEventCategory.value = "Iftar";
+  el.sharedEventDate.value = date;
+  saveState();
+  renderAll();
+
+  const synced = await saveSharedEventsToCloud();
+  if (synced) {
+    el.adminHint.textContent = "Shared event added and synced for everyone.";
+  } else {
+    el.adminHint.textContent = `Shared event added locally only${
+      state.lastCloudError ? ` (${state.lastCloudError})` : ""
+    }.`;
+  }
 }
 
 function renderAll() {
@@ -518,9 +624,14 @@ function refreshFormState() {
 
   el.eventDate.min = RAMADAN_START;
   el.eventDate.max = RAMADAN_END;
+  el.sharedEventDate.min = RAMADAN_START;
+  el.sharedEventDate.max = RAMADAN_END;
 
   if (!el.eventDate.value || !isRamadanDate(el.eventDate.value)) {
     el.eventDate.value = state.selectedDate;
+  }
+  if (!el.sharedEventDate.value || !isRamadanDate(el.sharedEventDate.value)) {
+    el.sharedEventDate.value = state.selectedDate;
   }
 
   if (disabled) {
@@ -528,18 +639,32 @@ function refreshFormState() {
   } else {
     updateHint("");
   }
+
+  refreshAdminState();
+}
+
+function refreshAdminState() {
+  const adminLocked = !state.isAdminUnlocked;
+  [
+    el.sharedEventTitle,
+    el.sharedEventCategory,
+    el.sharedEventDate,
+    el.sharedEventTime,
+    el.sharedEventPlace,
+    el.saveSharedEventBtn,
+  ].forEach((field) => {
+    field.disabled = adminLocked;
+  });
+
+  if (adminLocked && !el.adminHint.textContent.trim()) {
+    el.adminHint.textContent = "Locked. Enter admin PIN to edit shared events.";
+  }
 }
 
 function getSharedEvents() {
-  return DEFAULT_SHARED_EVENTS.map((event, index) => ({
-    id: `shared-2026-${index}`,
-    title: event.title,
-    category: event.category,
-    date: event.date,
-    time: "",
-    place: event.place,
-    isShared: true,
-  }));
+  return state.sharedEvents.length
+    ? state.sharedEvents
+    : buildDefaultSharedEvents();
 }
 
 function getEventsForDate(date) {
@@ -578,9 +703,13 @@ function loadState() {
       saved.personalEventsByUser && typeof saved.personalEventsByUser === "object"
         ? saved.personalEventsByUser
         : {};
+    state.sharedEvents = Array.isArray(saved.sharedEvents)
+      ? saved.sharedEvents
+      : buildDefaultSharedEvents();
 
     // Always require unlocking again when reopening the app.
     state.currentUser = "";
+    state.isAdminUnlocked = false;
 
     if (typeof saved.selectedDate === "string" && isRamadanDate(saved.selectedDate)) {
       state.selectedDate = saved.selectedDate;
@@ -598,6 +727,7 @@ function saveState() {
       userPins: state.userPins,
       pendingUser: state.pendingUser,
       personalEventsByUser: state.personalEventsByUser,
+      sharedEvents: state.sharedEvents,
       selectedDate: state.selectedDate,
     })
   );
@@ -615,6 +745,11 @@ function applyRamadanConstraints() {
   el.eventDate.min = RAMADAN_START;
   el.eventDate.max = RAMADAN_END;
   state.cloudConfigured = isCloudConfigured();
+  state.personalEventsByUser = sanitizePersonalEventsByUser(state.personalEventsByUser);
+  state.sharedEvents = sanitizeSharedEvents(state.sharedEvents);
+  if (!state.sharedEvents.length) {
+    state.sharedEvents = buildDefaultSharedEvents();
+  }
 }
 
 function isCloudConfigured() {
@@ -679,8 +814,8 @@ async function syncProfilesFromCloud(options = {}) {
     }
 
     const payload = (await response.json()) || {};
-    const cloudProfiles = extractCloudProfilesFromGist(payload);
-    mergeCloudProfiles(cloudProfiles);
+    const cloudData = extractCloudDataFromGist(payload);
+    applyCloudData(cloudData);
 
     state.cloudConfigured = true;
     state.cloudHealthy = true;
@@ -690,7 +825,7 @@ async function syncProfilesFromCloud(options = {}) {
     refreshFormState();
 
     if (announce) {
-      if (Object.keys(cloudProfiles).length > 0) {
+      if (cloudData.users.length > 0) {
         updateAuthHint(
           hasWriteToken()
             ? `Loaded ${state.users.length} shared profiles.`
@@ -719,46 +854,59 @@ async function syncProfilesFromCloud(options = {}) {
   }
 }
 
-function extractCloudProfilesFromGist(payload) {
-  const profiles = {};
+function extractCloudDataFromGist(payload) {
+  const data = {
+    users: [],
+    userPins: {},
+    personalEventsByUser: {},
+    sharedEvents: buildDefaultSharedEvents(),
+  };
+
   if (!payload || typeof payload !== "object") {
-    return profiles;
+    return data;
   }
 
   const files = payload.files && typeof payload.files === "object" ? payload.files : {};
   const profileFile = files[GIST_FILENAME];
   const content =
     profileFile && typeof profileFile.content === "string" ? profileFile.content : "";
-
-  if (!content) return profiles;
+  if (!content) return data;
 
   try {
     const parsed = JSON.parse(content);
     const list = Array.isArray(parsed?.profiles) ? parsed.profiles : [];
-
     for (const item of list) {
       if (!item || typeof item !== "object") continue;
       const name = normalizeName(String(item.name || ""));
-      const pin = String(item.pin || "").trim();
+      const pin = sanitizePinInput(String(item.pin || ""));
       if (!name || !isValidPin(pin)) continue;
-      profiles[name] = pin;
+      data.userPins[name] = pin;
     }
+    data.users = Object.keys(data.userPins).sort((a, b) => a.localeCompare(b));
+
+    const rawPersonal =
+      parsed?.personalEventsByUser && typeof parsed.personalEventsByUser === "object"
+        ? parsed.personalEventsByUser
+        : {};
+    data.personalEventsByUser = sanitizePersonalEventsByUser(rawPersonal);
+
+    const rawShared = Array.isArray(parsed?.sharedEvents) ? parsed.sharedEvents : [];
+    const cleanShared = sanitizeSharedEvents(rawShared);
+    data.sharedEvents = cleanShared.length ? cleanShared : buildDefaultSharedEvents();
   } catch (error) {
-    return profiles;
+    return data;
   }
 
-  return profiles;
+  return data;
 }
 
-function mergeCloudProfiles(cloudProfiles) {
-  const freshUsers = Object.keys(cloudProfiles).sort((a, b) => a.localeCompare(b));
-  const freshPins = {};
-  for (const name of freshUsers) {
-    freshPins[name] = cloudProfiles[name];
-  }
-
-  state.users = freshUsers;
-  state.userPins = freshPins;
+function applyCloudData(cloudData) {
+  state.users = cloudData.users;
+  state.userPins = cloudData.userPins;
+  state.personalEventsByUser = cloudData.personalEventsByUser;
+  state.sharedEvents = cloudData.sharedEvents.length
+    ? cloudData.sharedEvents
+    : buildDefaultSharedEvents();
 
   if (state.pendingUser && !findExistingUserName(state.pendingUser)) {
     state.pendingUser = "";
@@ -778,26 +926,83 @@ async function saveProfileToCloud(name, pin) {
     return false;
   }
 
+  const cloudData = await fetchCloudDataForWrite();
+  if (!cloudData) return false;
+
+  cloudData.userPins[name] = sanitizePinInput(pin);
+  cloudData.users = Object.keys(cloudData.userPins).sort((a, b) => a.localeCompare(b));
+  if (!cloudData.personalEventsByUser[name]) {
+    cloudData.personalEventsByUser[name] = [];
+  }
+
+  return writeCloudData(cloudData);
+}
+
+async function savePersonalEventsToCloud(userName) {
+  if (!isCloudConfigured()) return false;
+  if (!hasWriteToken()) {
+    state.lastCloudError = "missing token";
+    return false;
+  }
+
+  const cloudData = await fetchCloudDataForWrite();
+  if (!cloudData) return false;
+
+  cloudData.personalEventsByUser[userName] = sanitizePersonalEventList(
+    state.personalEventsByUser[userName] || [],
+    userName
+  );
+  if (state.userPins[userName]) {
+    cloudData.userPins[userName] = state.userPins[userName];
+  }
+  cloudData.users = Object.keys(cloudData.userPins).sort((a, b) => a.localeCompare(b));
+
+  return writeCloudData(cloudData);
+}
+
+async function saveSharedEventsToCloud() {
+  if (!isCloudConfigured()) return false;
+  if (!hasWriteToken()) {
+    state.lastCloudError = "missing token";
+    return false;
+  }
+
+  const cloudData = await fetchCloudDataForWrite();
+  if (!cloudData) return false;
+
+  cloudData.sharedEvents = sanitizeSharedEvents(state.sharedEvents);
+  return writeCloudData(cloudData);
+}
+
+async function fetchCloudDataForWrite() {
   try {
-    const fetchResponse = await fetch(getGistEndpoint(), {
+    const response = await fetch(getGistEndpoint(), {
       headers: buildGitHubHeaders(false),
       cache: "no-store",
     });
-    if (!fetchResponse.ok) {
-      state.lastCloudError = `read ${fetchResponse.status}`;
-      return false;
+    if (!response.ok) {
+      state.lastCloudError = `read ${response.status}`;
+      return null;
     }
 
-    const gist = await fetchResponse.json();
-    const existingProfiles = extractCloudProfilesFromGist(gist);
-    const mergedProfiles = { ...existingProfiles, [name]: pin };
-    const profileEntries = Object.entries(mergedProfiles)
-      .map(([profileName, profilePin]) => ({ name: profileName, pin: profilePin }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const payload = await response.json();
+    return extractCloudDataFromGist(payload);
+  } catch (error) {
+    state.lastCloudError = "network error";
+    return null;
+  }
+}
 
+async function writeCloudData(cloudData) {
+  try {
     const fileContent = JSON.stringify(
       {
-        profiles: profileEntries,
+        profiles: cloudData.users.map((name) => ({
+          name,
+          pin: cloudData.userPins[name],
+        })),
+        personalEventsByUser: cloudData.personalEventsByUser,
+        sharedEvents: cloudData.sharedEvents,
         updatedAt: new Date().toISOString(),
         disclaimer:
           "Fun mode only: pins are plain text and visible to anyone with gist access.",
@@ -827,11 +1032,89 @@ async function saveProfileToCloud(name, pin) {
     }
 
     state.lastCloudError = "";
-    return writeResponse.ok;
+    return true;
   } catch (error) {
     state.lastCloudError = "network error";
     return false;
   }
+}
+
+function buildDefaultSharedEvents() {
+  return DEFAULT_SHARED_EVENTS.map((event, index) => ({
+    id: `shared-default-${index + 1}`,
+    title: event.title,
+    category: event.category === "Sohour" ? "Sohour" : "Iftar",
+    date: event.date,
+    time: "",
+    place: event.place || "",
+    isShared: true,
+  }));
+}
+
+function sanitizePersonalEventsByUser(rawMap) {
+  const clean = {};
+  for (const [rawUser, rawEvents] of Object.entries(rawMap)) {
+    const userName = normalizeName(String(rawUser || ""));
+    if (!userName) continue;
+    clean[userName] = sanitizePersonalEventList(rawEvents, userName);
+  }
+  return clean;
+}
+
+function sanitizePersonalEventList(rawEvents, owner) {
+  if (!Array.isArray(rawEvents)) return [];
+  return rawEvents
+    .map((event, index) =>
+      sanitizeEventRecord(event, {
+        isShared: false,
+        owner,
+        fallbackId: `personal-${owner}-${index + 1}`,
+      })
+    )
+    .filter(Boolean)
+    .sort(compareEvents);
+}
+
+function sanitizeSharedEvents(rawEvents) {
+  if (!Array.isArray(rawEvents)) return [];
+  return rawEvents
+    .map((event, index) =>
+      sanitizeEventRecord(event, {
+        isShared: true,
+        fallbackId: `shared-cloud-${index + 1}`,
+      })
+    )
+    .filter(Boolean)
+    .sort(compareEvents);
+}
+
+function sanitizeEventRecord(rawEvent, options) {
+  if (!rawEvent || typeof rawEvent !== "object") return null;
+
+  const title = String(rawEvent.title || "").trim();
+  const category = rawEvent.category === "Sohour" ? "Sohour" : "Iftar";
+  const date = String(rawEvent.date || "").trim();
+  const time = String(rawEvent.time || "").trim();
+  const place = String(rawEvent.place || "").trim();
+  const id = String(rawEvent.id || options.fallbackId || "").trim();
+
+  if (!title || !date || !id || !isRamadanDate(date)) return null;
+
+  const normalized = {
+    id,
+    title,
+    category,
+    date,
+    time,
+    place,
+    isShared: Boolean(options.isShared),
+  };
+
+  if (!options.isShared) {
+    normalized.owner = options.owner || "";
+  }
+
+  return normalized;
 }
 
 function normalizeName(value) {
