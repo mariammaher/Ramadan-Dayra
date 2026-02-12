@@ -4,7 +4,7 @@ const RAMADAN_START = "2026-02-18";
 const RAMADAN_END = "2026-03-19";
 const RAMADAN_DATES = buildDateRange(RAMADAN_START, RAMADAN_END);
 const RAMADAN_RANGE_LABEL = "Feb 18 - Mar 19, 2026";
-const CLOUD_SYNC_INTERVAL_MS = 5000;
+const CLOUD_SYNC_INTERVAL_MS = 20000;
 const ADMIN_PIN = "2108";
 
 // GitHub-only sync (no external backend service):
@@ -101,6 +101,7 @@ const el = {
   sharedEventTime: document.getElementById("sharedEventTime"),
   sharedEventPlace: document.getElementById("sharedEventPlace"),
   saveSharedEventBtn: document.getElementById("saveSharedEventBtn"),
+  adminCard: document.getElementById("adminCard"),
 };
 
 init();
@@ -386,6 +387,13 @@ async function addPersonalEvent() {
 }
 
 function unlockAdmin() {
+  if (!isAdminEligibleProfile(state.currentUser)) {
+    state.isAdminUnlocked = false;
+    el.adminHint.textContent = "Admin tools are available only for Mariam profile.";
+    refreshAdminState();
+    return;
+  }
+
   const pin = sanitizePinInput(el.adminPinInput.value);
   if (!isValidPin(pin)) {
     el.adminHint.textContent = "Admin PIN must be exactly 4 digits.";
@@ -404,6 +412,13 @@ function unlockAdmin() {
 }
 
 async function addSharedEvent() {
+  if (!isAdminEligibleProfile(state.currentUser)) {
+    state.isAdminUnlocked = false;
+    el.adminHint.textContent = "Only Mariam profile can add shared events.";
+    refreshAdminState();
+    return;
+  }
+
   if (!state.isAdminUnlocked) {
     el.adminHint.textContent = "Unlock admin first.";
     return;
@@ -607,7 +622,9 @@ function renderAgendaItem(event, includeDate) {
 
 function canDeleteEvent(event) {
   if (!event || typeof event !== "object") return false;
-  if (event.isShared) return state.isAdminUnlocked;
+  if (event.isShared) {
+    return state.isAdminUnlocked && isAdminEligibleProfile(state.currentUser);
+  }
   return Boolean(state.currentUser) && event.owner === state.currentUser;
 }
 
@@ -737,6 +754,13 @@ function refreshFormState() {
 }
 
 function refreshAdminState() {
+  const adminEligible = isAdminEligibleProfile(state.currentUser);
+  el.adminCard.hidden = !adminEligible;
+
+  if (!adminEligible) {
+    state.isAdminUnlocked = false;
+  }
+
   const adminLocked = !state.isAdminUnlocked;
   [
     el.sharedEventTitle,
@@ -749,7 +773,9 @@ function refreshAdminState() {
     field.disabled = adminLocked;
   });
 
-  if (adminLocked && !el.adminHint.textContent.trim()) {
+  if (!adminEligible) {
+    el.adminHint.textContent = "Admin tools are available only for Mariam profile.";
+  } else if (adminLocked && !el.adminHint.textContent.trim()) {
     el.adminHint.textContent = "Locked. Enter admin PIN to edit shared events.";
   }
 }
@@ -897,7 +923,7 @@ async function syncProfilesFromCloud(options = {}) {
 
   try {
     const response = await fetch(getGistEndpoint(), {
-      headers: buildGitHubHeaders(false),
+      headers: buildGitHubHeaders(true),
       cache: "no-store",
     });
 
@@ -1070,7 +1096,7 @@ async function saveSharedEventsToCloud() {
 async function fetchCloudDataForWrite() {
   try {
     const response = await fetch(getGistEndpoint(), {
-      headers: buildGitHubHeaders(false),
+      headers: buildGitHubHeaders(true),
       cache: "no-store",
     });
     if (!response.ok) {
@@ -1212,6 +1238,10 @@ function sanitizeEventRecord(rawEvent, options) {
 
 function normalizeName(value) {
   return value.trim().replace(/\s+/g, " ");
+}
+
+function isAdminEligibleProfile(name) {
+  return typeof name === "string" && name.toLowerCase().includes("mariam");
 }
 
 function sanitizePinInput(value) {
