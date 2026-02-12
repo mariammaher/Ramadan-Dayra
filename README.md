@@ -1,2 +1,2 @@
 # Ramadan-Dayra
-Ramadan Dayra Schedu;e
+Ramadan Dayra Schedule
