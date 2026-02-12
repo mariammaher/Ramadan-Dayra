@@ -464,6 +464,7 @@ button:hover {
 }
 
 .planner-card,
+.admin-card,
 .agenda-card {
   padding: 18px;
   animation: rise 1s ease;
@@ -486,10 +487,28 @@ label {
   margin-top: 4px;
 }
 
+#saveSharedEventBtn {
+  margin-top: 4px;
+}
+
 .form-hint {
   margin: 0;
   min-height: 18px;
   color: var(--danger);
+  font-size: 0.8rem;
+}
+
+.admin-unlock {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.admin-hint {
+  margin: 8px 0 4px;
+  min-height: 18px;
+  color: var(--text-soft);
   font-size: 0.8rem;
 }
 
@@ -675,6 +694,7 @@ label {
   }
 
   .planner-card,
+  .admin-card,
   .agenda-card,
   .calendar-card,
   .identity-card {
@@ -795,7 +815,8 @@ label {
   }
 
   .agenda-card h3,
-  .planner-card h3 {
+  .planner-card h3,
+  .admin-card h3 {
     font-size: 1.35rem;
   }
 
@@ -808,6 +829,10 @@ label {
   }
 
   .access-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-unlock {
     grid-template-columns: 1fr;
   }
 
