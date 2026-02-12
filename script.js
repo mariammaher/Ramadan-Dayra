@@ -4,6 +4,11 @@ const RAMADAN_START = "2026-02-18";
 const RAMADAN_END = "2026-03-19";
 const RAMADAN_DATES = buildDateRange(RAMADAN_START, RAMADAN_END);
 const RAMADAN_RANGE_LABEL = "Feb 18 - Mar 19, 2026";
+const CLOUD_SYNC_INTERVAL_MS = 15000;
+
+// Set this to your Firebase Realtime Database URL to sync profiles across devices.
+// Example: https://your-project-id-default-rtdb.firebaseio.com
+const FIREBASE_DB_URL = "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com";
 
 const DEFAULT_SHARED_EVENTS = [
   {
@@ -45,6 +50,9 @@ const state = {
   currentUser: "",
   personalEventsByUser: {},
   selectedDate: RAMADAN_START,
+  cloudConfigured: false,
+  cloudHealthy: false,
+  syncInFlight: false,
 };
 
 const el = {
@@ -75,28 +83,32 @@ const el = {
 
 init();
 
-function init() {
+async function init() {
   loadState();
   applyRamadanConstraints();
   renderWeekdays();
   bindEvents();
   renderAll();
+  await syncProfilesFromCloud({ announce: true });
+  startProfileSync();
 }
 
 function bindEvents() {
-  el.joinBtn.addEventListener("click", createProfile);
+  el.joinBtn.addEventListener("click", () => {
+    void createProfile();
+  });
 
   el.nameInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      createProfile();
+      void createProfile();
     }
   });
 
   el.createPinInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      createProfile();
+      void createProfile();
     }
   });
 
@@ -105,12 +117,14 @@ function bindEvents() {
     saveState();
   });
 
-  el.accessBtn.addEventListener("click", unlockProfile);
+  el.accessBtn.addEventListener("click", () => {
+    void unlockProfile();
+  });
 
   el.accessPinInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      unlockProfile();
+      void unlockProfile();
     }
   });
 
@@ -137,7 +151,7 @@ function bindEvents() {
   });
 }
 
-function createProfile() {
+async function createProfile() {
   const name = normalizeName(el.nameInput.value);
   const pin = el.createPinInput.value.trim();
 
@@ -151,8 +165,11 @@ function createProfile() {
     return;
   }
 
-  if (state.users.includes(name)) {
-    state.pendingUser = name;
+  await syncProfilesFromCloud();
+  const existingName = findExistingUserName(name);
+
+  if (existingName) {
+    state.pendingUser = existingName;
     saveState();
     renderUserSection();
     updateAuthHint("Profile already exists. Use Unlock with the correct PIN.");
@@ -174,9 +191,17 @@ function createProfile() {
   updateAuthHint(`Profile created and unlocked for ${name}.`);
   saveState();
   renderAll();
+
+  const cloudSaved = await saveProfileToCloud(name, pin);
+  if (cloudSaved) {
+    await syncProfilesFromCloud({ force: true });
+    updateAuthHint(`Profile created and synced for everyone: ${name}.`);
+  } else {
+    updateAuthHint("Profile created on this device only. Configure cloud sync to share profiles.");
+  }
 }
 
-function unlockProfile() {
+async function unlockProfile() {
   const user = state.pendingUser || el.userSelect.value;
   const pin = el.accessPinInput.value.trim();
 
@@ -190,17 +215,21 @@ function unlockProfile() {
     return;
   }
 
-  const savedPin = state.userPins[user];
+  await syncProfilesFromCloud();
+  const matchedUser = findExistingUserName(user) || user;
+  const savedPin = state.userPins[matchedUser];
 
   // Migration path for previously created profiles that had no PIN yet.
   if (!savedPin) {
-    state.userPins[user] = pin;
-    state.currentUser = user;
-    state.pendingUser = user;
+    state.userPins[matchedUser] = pin;
+    state.currentUser = matchedUser;
+    state.pendingUser = matchedUser;
     el.accessPinInput.value = "";
-    updateAuthHint(`PIN set and profile unlocked for ${user}.`);
+    updateAuthHint(`PIN set and profile unlocked for ${matchedUser}.`);
     saveState();
     renderAll();
+    await saveProfileToCloud(matchedUser, pin);
+    await syncProfilesFromCloud({ force: true });
     return;
   }
 
@@ -209,10 +238,10 @@ function unlockProfile() {
     return;
   }
 
-  state.currentUser = user;
-  state.pendingUser = user;
+  state.currentUser = matchedUser;
+  state.pendingUser = matchedUser;
   el.accessPinInput.value = "";
-  updateAuthHint(`Profile unlocked for ${user}.`);
+  updateAuthHint(`Profile unlocked for ${matchedUser}.`);
   saveState();
   renderAll();
 }
@@ -318,18 +347,23 @@ function renderCalendar() {
     const classes = ["day-cell"];
     if (isSelected) classes.push("selected");
     if (isToday) classes.push("today");
+    if (dayEvents.length > 0) classes.push("has-events");
 
     const preview = dayEvents.slice(0, 2).map(renderEventPill).join("");
     const more =
       dayEvents.length > 2
         ? `<span class="pill more">+${dayEvents.length - 2} more</span>`
         : "";
+    const eventCountBadge = dayEvents.length
+      ? `<span class="mobile-event-count">${dayEvents.length}</span>`
+      : "";
 
     cells.push(`
       <button class="${classes.join(" ")}" type="button" data-date="${date}">
         <div class="day-head">
           <span class="day-number">${parsed.day}</span>
           <span class="day-month">${monthShort(parsed.month)}</span>
+          ${eventCountBadge}
         </div>
         <div class="pill-row">${preview}${more}</div>
       </button>
@@ -508,6 +542,146 @@ function applyRamadanConstraints() {
 
   el.eventDate.min = RAMADAN_START;
   el.eventDate.max = RAMADAN_END;
+  state.cloudConfigured = isCloudConfigured();
+}
+
+function normalizeDbUrl(url) {
+  return url.trim().replace(/\/+$/, "");
+}
+
+function isCloudConfigured() {
+  const normalized = normalizeDbUrl(FIREBASE_DB_URL);
+  return Boolean(normalized) && !normalized.includes("YOUR_PROJECT_ID");
+}
+
+function getProfilesEndpoint() {
+  return `${normalizeDbUrl(FIREBASE_DB_URL)}/profiles`;
+}
+
+function findExistingUserName(candidate) {
+  const lowered = candidate.toLowerCase();
+  return state.users.find((name) => name.toLowerCase() === lowered) || "";
+}
+
+function profileKey(name) {
+  return encodeURIComponent(name.toLowerCase());
+}
+
+function startProfileSync() {
+  if (!isCloudConfigured()) return;
+  setInterval(() => {
+    void syncProfilesFromCloud();
+  }, CLOUD_SYNC_INTERVAL_MS);
+}
+
+async function syncProfilesFromCloud(options = {}) {
+  const { announce = false, force = false } = options;
+
+  if (!isCloudConfigured()) {
+    state.cloudConfigured = false;
+    if (announce) {
+      updateAuthHint("Shared profile sync is off. Add your Firebase URL in script.js.");
+    }
+    return false;
+  }
+
+  if (state.syncInFlight && !force) return false;
+  state.syncInFlight = true;
+
+  try {
+    const response = await fetch(`${getProfilesEndpoint()}.json`, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Cloud fetch failed with ${response.status}`);
+    }
+
+    const payload = (await response.json()) || {};
+    const cloudProfiles = extractCloudProfiles(payload);
+    mergeCloudProfiles(cloudProfiles);
+
+    state.cloudConfigured = true;
+    state.cloudHealthy = true;
+    saveState();
+    renderUserSection();
+    refreshFormState();
+
+    if (announce) {
+      if (Object.keys(cloudProfiles).length > 0) {
+        updateAuthHint(`Loaded ${state.users.length} shared profiles.`);
+      } else {
+        updateAuthHint("No shared profiles yet. Create the first one.");
+      }
+    }
+
+    return true;
+  } catch (error) {
+    state.cloudConfigured = true;
+    state.cloudHealthy = false;
+    if (announce) {
+      updateAuthHint("Could not reach shared profile storage. Using local profiles only.");
+    }
+    return false;
+  } finally {
+    state.syncInFlight = false;
+  }
+}
+
+function extractCloudProfiles(payload) {
+  const profiles = {};
+  if (!payload || typeof payload !== "object") {
+    return profiles;
+  }
+
+  for (const value of Object.values(payload)) {
+    if (!value || typeof value !== "object") continue;
+    const name = normalizeName(String(value.name || ""));
+    const pin = String(value.pin || "").trim();
+    if (!name || !isValidPin(pin)) continue;
+    profiles[name] = pin;
+  }
+
+  return profiles;
+}
+
+function mergeCloudProfiles(cloudProfiles) {
+  const mergedUsers = new Set(state.users);
+  for (const name of Object.keys(cloudProfiles)) {
+    mergedUsers.add(name);
+    state.userPins[name] = cloudProfiles[name];
+  }
+
+  state.users = Array.from(mergedUsers).sort((a, b) => a.localeCompare(b));
+
+  if (state.pendingUser && !findExistingUserName(state.pendingUser)) {
+    state.pendingUser = "";
+  }
+  if (state.currentUser && !findExistingUserName(state.currentUser)) {
+    state.currentUser = "";
+  }
+  if (!state.pendingUser && state.users.length > 0) {
+    state.pendingUser = state.users[0];
+  }
+}
+
+async function saveProfileToCloud(name, pin) {
+  if (!isCloudConfigured()) return false;
+
+  try {
+    const response = await fetch(`${getProfilesEndpoint()}/${profileKey(name)}.json`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        pin,
+        updatedAt: new Date().toISOString(),
+      }),
+    });
+    return response.ok;
+  } catch (error) {
+    return false;
+  }
 }
 
 function normalizeName(value) {
