@@ -552,6 +552,23 @@ label {
   justify-content: flex-end;
 }
 
+.event-delete-btn {
+  border: 1px solid rgba(255, 143, 143, 0.5);
+  background: rgba(255, 143, 143, 0.12);
+  color: #ffd4d4;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.event-delete-btn:hover {
+  transform: none;
+  box-shadow: none;
+  background: rgba(255, 143, 143, 0.2);
+}
+
 .agenda-item p {
   margin: 3px 0 0;
   color: var(--text-soft);
