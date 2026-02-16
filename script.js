@@ -875,14 +875,9 @@ function sanitizeEventsForPoster(events, source) {
 }
 
 function formatPosterEventLine(event) {
-  const parts = [
-    eventDateLabel(event.date),
-    event.category,
-    event.title,
-    event.place ? `@ ${event.place}` : "",
-    event.time ? `(${event.time})` : "",
-    `[${event.source}]`,
-  ].filter(Boolean);
+  const parts = [eventDateLabel(event.date), event.category, event.title].filter(
+    Boolean
+  );
   return `- ${parts.join(" | ")}`;
 }
 
@@ -891,7 +886,7 @@ function eventDateLabel(dateKey) {
   const parsed = parseDate(dateKey);
   return new Date(parsed.year, parsed.month - 1, parsed.day).toLocaleDateString(
     "en-US",
-    { month: "long", day: "numeric" }
+    { weekday: "long", month: "long", day: "numeric" }
   );
 }
 
@@ -900,19 +895,21 @@ function buildSharedPosterPrompt(sharedEvents) {
     ? sharedEvents.map(formatPosterEventLine).join("\n")
     : "- No shared events yet.";
   return [
-    "Create a premium vertical Ramadan invite poster (1080x1920) for a friend group called 'El Dayra'.",
-    "Style: rich Ramadan aesthetic, deep navy and warm gold palette, lanterns, crescent moon, stars, subtle Islamic geometric ornaments, elegant parchment event cards, highly readable text.",
+    "Create a festive vertical Ramadan invitation poster (1080x1920) for a friend group called 'El Dayra'.",
+    "Visual style: rich Ramadan vibes, joyful and celebratory, deep night-sky blue and glowing gold palette, hanging lanterns (fanous), crescent moon, stars, sparkles, elegant Islamic geometric motifs, warm light bloom, and premium invitation-card finish.",
     "Branding text:",
     "- Main title: El Dayra",
-    "- Subtitle: Ramadan Shared Schedule 2026",
+    "- Subtitle: Ramadan Shared Invites 2026",
     "Rules:",
-    "- Use only the events below.",
+    "- Use only the events listed below.",
     "- Do not invent names, dates, or locations.",
-    "- Keep text clean and readable.",
-    "- If schedule is short, add footer: More invites to be announced.",
-    "Events:",
+    "- Event cards must show only: day + date, event type (Iftar or Sohour), and event name.",
+    "- Do not show location or time.",
+    "- Keep typography highly readable and large.",
+    "- Add small festive footer text: More invites to be announced.",
+    "Shared events:",
     lines,
-    "Output: one polished social-ready poster, English text only, no watermark.",
+    "Output: one polished social-ready poster, English text only, no watermark, no gibberish.",
   ].join("\n");
 }
 
@@ -924,21 +921,24 @@ function buildSharedPersonalPosterPrompt(profileName, sharedEvents, personalEven
     ? personalEvents.map(formatPosterEventLine).join("\n")
     : "- No personal events yet.";
   return [
-    "Create a premium vertical Ramadan invite poster (1080x1920) for a friend group called 'El Dayra'.",
-    "Style: rich Ramadan aesthetic, deep navy and warm gold palette, lanterns, crescent moon, stars, subtle Islamic geometric ornaments, elegant parchment event cards, highly readable text.",
+    "Create a festive vertical Ramadan invitation poster (1080x1920) for a friend group called 'El Dayra'.",
+    "Visual style: rich Ramadan vibes, joyful and celebratory, deep night-sky blue and glowing gold palette, hanging lanterns (fanous), crescent moon, stars, sparkles, elegant Islamic geometric motifs, warm light bloom, and premium invitation-card finish.",
     "Branding text:",
     "- Main title: El Dayra",
     `- Subtitle: ${profileName}'s Ramadan Agenda 2026`,
     "Rules:",
-    "- Combine shared and personal events in one schedule.",
-    "- Clearly label event source as Shared or Personal.",
-    "- Use only the events below.",
+    "- Combine shared and personal events in one poster.",
+    "- Keep two clear sections: Shared Invites and Personal Invites.",
+    "- Use only the events listed below.",
     "- Do not invent names, dates, or locations.",
+    "- Event cards must show only: day + date, event type (Iftar or Sohour), and event name.",
+    "- Do not show location or time.",
+    "- Keep typography highly readable and large.",
     "Shared events:",
     sharedLines,
     `Personal events for ${profileName}:`,
     personalLines,
-    "Output: one polished social-ready poster, English text only, no watermark.",
+    "Output: one polished social-ready poster, English text only, no watermark, no gibberish.",
   ].join("\n");
 }
 
