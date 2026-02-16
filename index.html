@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Reem+Kufi+Fun:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260212-7" />
+    <link rel="stylesheet" href="styles.css?v=20260216-1" />
   </head>
   <body>
     <div class="backdrop">
@@ -88,10 +88,17 @@
       </section>
 
       <section class="layout">
-        <section class="calendar-card card">
+        <section id="calendarCard" class="calendar-card card">
           <div class="calendar-top">
-            <h2 id="monthLabel">Ramadan 2026</h2>
-            <p id="rangeLabel" class="range-label"></p>
+            <div>
+              <h2 id="monthLabel">Ramadan 2026</h2>
+              <p id="rangeLabel" class="range-label"></p>
+            </div>
+            <div class="calendar-actions">
+              <button id="generateImageBtn" class="secondary-btn" type="button">
+                Generate Image
+              </button>
+            </div>
           </div>
 
           <div class="legend">
@@ -242,6 +249,27 @@
       </div>
     </div>
 
-    <script src="script.js?v=20260212-7"></script>
+    <div id="imageOptionsModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="imageModalTitle">
+        <div class="modal-head">
+          <h3 id="imageModalTitle">Generate Calendar Image</h3>
+          <button id="closeImageModalBtn" class="close-modal-btn" type="button">Close</button>
+        </div>
+        <p class="modal-copy">
+          Choose if your image should include only shared events or shared + your personal events.
+        </p>
+        <div class="image-option-actions">
+          <button id="exportSharedOnlyBtn" class="option-btn" type="button">
+            Shared Calendar Only
+          </button>
+          <button id="exportWithPersonalBtn" class="option-btn" type="button">
+            Shared + Personal Calendar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="script.js?v=20260216-1"></script>
   </body>
 </html>
