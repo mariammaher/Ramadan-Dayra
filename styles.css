@@ -240,13 +240,33 @@ button:hover {
 }
 
 .calendar-top {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 12px;
 }
 
 .calendar-top h2 {
   font-size: clamp(1.3rem, 2.6vw, 1.8rem);
+}
+
+.calendar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secondary-btn {
+  background: rgba(255, 227, 177, 0.14);
+  border: 1px solid rgba(255, 227, 177, 0.32);
+  color: var(--text-main);
+  box-shadow: none;
+}
+
+.secondary-btn:hover {
+  box-shadow: none;
+  background: rgba(255, 227, 177, 0.22);
 }
 
 .range-label {
@@ -655,6 +675,46 @@ label {
   padding: 8px 10px;
 }
 
+.modal-copy {
+  margin: 0 0 12px;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.image-option-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.option-btn {
+  width: 100%;
+  text-align: center;
+}
+
+.export-sandbox {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 980px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: -1;
+}
+
+.export-capture {
+  width: 980px;
+  max-width: 980px;
+}
+
+.export-capture .calendar-scroll {
+  overflow: visible;
+}
+
+.export-capture .calendar-scroll .weekdays,
+.export-capture .calendar-scroll .calendar-grid {
+  min-width: 0;
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -741,6 +801,19 @@ label {
 
   .calendar-top h2 {
     font-size: 1.28rem;
+  }
+
+  .calendar-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .calendar-actions {
+    width: 100%;
+  }
+
+  .secondary-btn {
+    width: 100%;
   }
 
   .range-label {
