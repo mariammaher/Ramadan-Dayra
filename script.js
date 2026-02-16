@@ -13,7 +13,7 @@ const ADMIN_PIN = "2108";
 // 3) Paste a GitHub token with "gist" scope below if you want everyone to write shared profiles.
 const GITHUB_GIST_ID = "b2657e230ec6e682643fbcadb0f1661f";
 const GITHUB_GIST_OWNER = "mariammaher";
-const GITHUB_TOKEN = "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";
+const GITHUB_TOKEN = "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";
 const GIST_FILENAME = "profiles.json";
 const IMAGE_PROXY_URL =
   "https://el-dayra-image-proxy.eldayra-poster-2026.workers.dev";
@@ -875,7 +875,8 @@ function sanitizeEventsForPoster(events, source) {
 }
 
 function formatPosterEventLine(event) {
-  const parts = [eventDateLabel(event.date), event.category, event.title].filter(
+  const categoryLabel = event.category === "Sohour" ? "SOHOUR" : "IFTAR";
+  const parts = [eventDateLabel(event.date), event.title, categoryLabel].filter(
     Boolean
   );
   return `- ${parts.join(" | ")}`;
@@ -891,6 +892,8 @@ function eventDateLabel(dateKey) {
 }
 
 function buildSharedPosterPrompt(sharedEvents) {
+  const iftarCount = sharedEvents.filter((event) => event.category === "Iftar").length;
+  const sohourCount = sharedEvents.filter((event) => event.category === "Sohour").length;
   const lines = sharedEvents.length
     ? sharedEvents.map(formatPosterEventLine).join("\n")
     : "- No shared events yet.";
@@ -903,10 +906,17 @@ function buildSharedPosterPrompt(sharedEvents) {
     "Rules:",
     "- Use only the events listed below.",
     "- Do not invent names, dates, or locations.",
-    "- Event cards must show only: day + date, event type (Iftar or Sohour), and event name.",
+    "- Event cards must show only: day + date, event name, and event type (Iftar or Sohour).",
+    "- Category fidelity is mandatory: keep each event category exactly as provided.",
+    "- If an event line says SOHOUR, it must appear as SOHOUR in the poster (never convert it to IFTAR).",
+    "- Include both categories whenever both exist in the provided data.",
     "- Do not show location or time.",
+    "- Strict display format for each event: DAY, MONTH DATE | EVENT NAME | IFTAR/SOHOUR.",
+    "- Write full weekday and full month (no abbreviations).",
+    "- Keep the event text exactly aligned with the provided lines and avoid typos.",
     "- Keep typography highly readable and large.",
     "- Add small festive footer text: More invites to be announced.",
+    `Category totals from input: IFTAR=${iftarCount}, SOHOUR=${sohourCount}.`,
     "Shared events:",
     lines,
     "Output: one polished social-ready poster, English text only, no watermark, no gibberish.",
@@ -914,6 +924,9 @@ function buildSharedPosterPrompt(sharedEvents) {
 }
 
 function buildSharedPersonalPosterPrompt(profileName, sharedEvents, personalEvents) {
+  const combinedEvents = [...sharedEvents, ...personalEvents];
+  const iftarCount = combinedEvents.filter((event) => event.category === "Iftar").length;
+  const sohourCount = combinedEvents.filter((event) => event.category === "Sohour").length;
   const sharedLines = sharedEvents.length
     ? sharedEvents.map(formatPosterEventLine).join("\n")
     : "- No shared events yet.";
@@ -931,9 +944,16 @@ function buildSharedPersonalPosterPrompt(profileName, sharedEvents, personalEven
     "- Keep two clear sections: Shared Invites and Personal Invites.",
     "- Use only the events listed below.",
     "- Do not invent names, dates, or locations.",
-    "- Event cards must show only: day + date, event type (Iftar or Sohour), and event name.",
+    "- Event cards must show only: day + date, event name, and event type (Iftar or Sohour).",
+    "- Category fidelity is mandatory: keep each event category exactly as provided.",
+    "- If an event line says SOHOUR, it must appear as SOHOUR in the poster (never convert it to IFTAR).",
+    "- Include both categories whenever both exist in the provided data.",
     "- Do not show location or time.",
+    "- Strict display format for each event: DAY, MONTH DATE | EVENT NAME | IFTAR/SOHOUR.",
+    "- Write full weekday and full month (no abbreviations).",
+    "- Keep the event text exactly aligned with the provided lines and avoid typos.",
     "- Keep typography highly readable and large.",
+    `Category totals from input: IFTAR=${iftarCount}, SOHOUR=${sohourCount}.`,
     "Shared events:",
     sharedLines,
     `Personal events for ${profileName}:`,
