@@ -15,6 +15,9 @@ const GITHUB_GIST_ID = "b2657e230ec6e682643fbcadb0f1661f";
 const GITHUB_GIST_OWNER = "mariammaher";
 const GITHUB_TOKEN = "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";
 const GIST_FILENAME = "profiles.json";
+const IMAGE_PROXY_URL =
+  "https://el-dayra-image-proxy.eldayra-poster-2026.workers.dev";
+const MAX_IMAGE_EVENTS = 10;
 
 const DEFAULT_SHARED_EVENTS = [
   {
@@ -757,28 +760,15 @@ function closeImageOptionsModal() {
   el.imageOptionsModal.setAttribute("aria-hidden", "true");
 }
 
-function createCalendarCaptureClone() {
-  const sandbox = document.createElement("div");
-  sandbox.className = "export-sandbox";
-
-  const clone = el.calendarCard.cloneNode(true);
-  clone.classList.add("export-capture");
-  clone.id = "";
-
-  const actions = clone.querySelector(".calendar-actions");
-  if (actions) {
-    actions.remove();
+function setImageGenerationLoading(isLoading) {
+  el.generateImageBtn.disabled = isLoading;
+  el.exportSharedOnlyBtn.disabled = isLoading;
+  el.exportWithPersonalBtn.disabled = isLoading || !state.currentUser;
+  if (isLoading) {
+    el.generateImageBtn.textContent = "Generating...";
+  } else {
+    el.generateImageBtn.textContent = "Generate Image";
   }
-
-  sandbox.appendChild(clone);
-  document.body.appendChild(sandbox);
-  return { sandbox, clone };
-}
-
-function nextFrame() {
-  return new Promise((resolve) => {
-    window.requestAnimationFrame(() => resolve());
-  });
 }
 
 async function generateCalendarImage(includePersonal) {
@@ -788,30 +778,55 @@ async function generateCalendarImage(includePersonal) {
     return;
   }
 
-  if (typeof window.html2canvas !== "function") {
-    updateAuthHint("Image tool failed to load. Refresh and try again.");
+  if (!IMAGE_PROXY_URL) {
+    updateAuthHint("Image service is not configured yet.");
     closeImageOptionsModal();
     return;
   }
 
   closeImageOptionsModal();
-  el.generateImageBtn.disabled = true;
-  let sandbox = null;
+  setImageGenerationLoading(true);
 
   try {
-    renderCalendar({ includePersonal });
-    await nextFrame();
+    const mode = includePersonal ? "shared_personal" : "shared_only";
+    const sharedEvents = sanitizeEventsForPoster(getSharedEvents(), "Shared");
+    const personalEvents = includePersonal
+      ? sanitizeEventsForPoster(state.personalEventsByUser[state.currentUser] || [], "Personal")
+      : [];
 
-    const captureNodes = createCalendarCaptureClone();
-    sandbox = captureNodes.sandbox;
-    const clone = captureNodes.clone;
-    const canvas = await window.html2canvas(clone, {
-      backgroundColor: null,
-      scale: Math.max(2, Math.min(3, window.devicePixelRatio || 2)),
-      useCORS: true,
+    const response = await fetch(IMAGE_PROXY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode,
+        profileName: state.currentUser || "",
+        sharedEvents,
+        personalEvents,
+        prompt:
+          mode === "shared_only"
+            ? buildSharedPosterPrompt(sharedEvents)
+            : buildSharedPersonalPosterPrompt(
+                state.currentUser || "Friend",
+                sharedEvents,
+                personalEvents
+              ),
+      }),
     });
-    sandbox.remove();
-    sandbox = null;
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const errorText =
+        typeof data.error === "string" && data.error.trim()
+          ? data.error.trim()
+          : "Image generation failed.";
+      throw new Error(errorText);
+    }
+
+    const b64 = typeof data.b64 === "string" ? data.b64 : "";
+    const imageUrl = typeof data.imageUrl === "string" ? data.imageUrl : "";
+    if (!b64 && !imageUrl) {
+      throw new Error("No image returned from service.");
+    }
 
     const dateStamp = todayKey();
     const modeLabel = includePersonal ? "shared-personal" : "shared-only";
@@ -820,8 +835,10 @@ async function generateCalendarImage(includePersonal) {
       : "";
 
     const downloadLink = document.createElement("a");
-    downloadLink.href = canvas.toDataURL("image/png");
+    downloadLink.href = b64 ? `data:image/png;base64,${b64}` : imageUrl;
     downloadLink.download = `el-dayra-${modeLabel}${userSlug}-${dateStamp}.png`;
+    downloadLink.rel = "noopener";
+    downloadLink.target = "_blank";
     downloadLink.click();
 
     updateAuthHint(
@@ -830,15 +847,99 @@ async function generateCalendarImage(includePersonal) {
         : "Calendar image downloaded (shared only)."
     );
   } catch (error) {
-    updateAuthHint("Could not generate image. Try again.");
+    updateAuthHint(
+      error instanceof Error && error.message
+        ? `Could not generate image: ${error.message}`
+        : "Could not generate image. Try again."
+    );
   } finally {
-    if (sandbox) {
-      sandbox.remove();
-    }
-    renderCalendar();
-    renderAgenda();
-    el.generateImageBtn.disabled = false;
+    setImageGenerationLoading(false);
   }
+}
+
+function sanitizeEventsForPoster(events, source) {
+  if (!Array.isArray(events)) return [];
+  return events
+    .filter((event) => event && typeof event === "object" && isRamadanDate(String(event.date || "")))
+    .sort(compareEvents)
+    .slice(0, MAX_IMAGE_EVENTS)
+    .map((event) => ({
+      date: String(event.date || ""),
+      category: event.category === "Sohour" ? "Sohour" : "Iftar",
+      title: String(event.title || "").trim(),
+      place: String(event.place || "").trim(),
+      time: String(event.time || "").trim(),
+      source,
+    }))
+    .filter((event) => event.title && event.date);
+}
+
+function formatPosterEventLine(event) {
+  const parts = [
+    eventDateLabel(event.date),
+    event.category,
+    event.title,
+    event.place ? `@ ${event.place}` : "",
+    event.time ? `(${event.time})` : "",
+    `[${event.source}]`,
+  ].filter(Boolean);
+  return `- ${parts.join(" | ")}`;
+}
+
+function eventDateLabel(dateKey) {
+  if (!isRamadanDate(dateKey)) return dateKey;
+  const parsed = parseDate(dateKey);
+  return new Date(parsed.year, parsed.month - 1, parsed.day).toLocaleDateString(
+    "en-US",
+    { month: "long", day: "numeric" }
+  );
+}
+
+function buildSharedPosterPrompt(sharedEvents) {
+  const lines = sharedEvents.length
+    ? sharedEvents.map(formatPosterEventLine).join("\n")
+    : "- No shared events yet.";
+  return [
+    "Create a premium vertical Ramadan invite poster (1080x1920) for a friend group called 'El Dayra'.",
+    "Style: rich Ramadan aesthetic, deep navy and warm gold palette, lanterns, crescent moon, stars, subtle Islamic geometric ornaments, elegant parchment event cards, highly readable text.",
+    "Branding text:",
+    "- Main title: El Dayra",
+    "- Subtitle: Ramadan Shared Schedule 2026",
+    "Rules:",
+    "- Use only the events below.",
+    "- Do not invent names, dates, or locations.",
+    "- Keep text clean and readable.",
+    "- If schedule is short, add footer: More invites to be announced.",
+    "Events:",
+    lines,
+    "Output: one polished social-ready poster, English text only, no watermark.",
+  ].join("\n");
+}
+
+function buildSharedPersonalPosterPrompt(profileName, sharedEvents, personalEvents) {
+  const sharedLines = sharedEvents.length
+    ? sharedEvents.map(formatPosterEventLine).join("\n")
+    : "- No shared events yet.";
+  const personalLines = personalEvents.length
+    ? personalEvents.map(formatPosterEventLine).join("\n")
+    : "- No personal events yet.";
+  return [
+    "Create a premium vertical Ramadan invite poster (1080x1920) for a friend group called 'El Dayra'.",
+    "Style: rich Ramadan aesthetic, deep navy and warm gold palette, lanterns, crescent moon, stars, subtle Islamic geometric ornaments, elegant parchment event cards, highly readable text.",
+    "Branding text:",
+    "- Main title: El Dayra",
+    `- Subtitle: ${profileName}'s Ramadan Agenda 2026`,
+    "Rules:",
+    "- Combine shared and personal events in one schedule.",
+    "- Clearly label event source as Shared or Personal.",
+    "- Use only the events below.",
+    "- Do not invent names, dates, or locations.",
+    "Shared events:",
+    sharedLines,
+    `Personal events for ${profileName}:`,
+    personalLines,
+    "Output: one polished social-ready poster, English text only, no watermark.",
+  ].join("\n");
 }
 
 function refreshFormState() {
