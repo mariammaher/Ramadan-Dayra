@@ -13,7 +13,7 @@ const ADMIN_PIN = "2108";
 // 3) Paste a GitHub token with "gist" scope below if you want everyone to write shared profiles.
 const GITHUB_GIST_ID = "b2657e230ec6e682643fbcadb0f1661f";
 const GITHUB_GIST_OWNER = "mariammaher";
-const GITHUB_TOKEN = "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";
+const GITHUB_TOKEN = "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";
 const GIST_FILENAME = "profiles.json";
 const IMAGE_PROXY_URL =
   "https://el-dayra-image-proxy.eldayra-poster-2026.workers.dev";
