@@ -1117,6 +1117,7 @@ function applyRamadanConstraints() {
 }
 
 function isCloudConfigured() {
+  if (isWorkerSyncConfigured()) return true;
   const gistId = String(GITHUB_GIST_ID || "").trim();
   return Boolean(gistId) && !gistId.includes("YOUR_PUBLIC_GIST_ID");
 }
@@ -1124,6 +1125,29 @@ function isCloudConfigured() {
 function hasWriteToken() {
   const token = String(GITHUB_TOKEN || "").trim();
   return Boolean(token) && !token.includes("YOUR_GITHUB_GIST_TOKEN");
+}
+
+function isWorkerSyncConfigured() {
+  const base = String(IMAGE_PROXY_URL || "").trim();
+  return Boolean(base && /^https?:\/\//.test(base));
+}
+
+function canWriteCloud() {
+  return isWorkerSyncConfigured() || hasWriteToken();
+}
+
+function getWorkerBaseUrl() {
+  return String(IMAGE_PROXY_URL || "").trim().replace(/\/+$/, "");
+}
+
+function getWorkerSyncReadEndpoint() {
+  const base = getWorkerBaseUrl();
+  return base ? `${base}/sync/read` : "";
+}
+
+function getWorkerSyncWriteEndpoint() {
+  const base = getWorkerBaseUrl();
+  return base ? `${base}/sync/write` : "";
 }
 
 function getGistEndpoint() {
@@ -1165,6 +1189,16 @@ async function fetchCloudDataForRead() {
   const attempts = [];
   const gistEndpoint = getGistEndpoint();
   const rawEndpoint = getGistRawEndpoint();
+  const workerReadEndpoint = getWorkerSyncReadEndpoint();
+
+  if (workerReadEndpoint) {
+    attempts.push({
+      label: "worker-read",
+      url: workerReadEndpoint,
+      headers: { Accept: "application/json" },
+      parser: "worker",
+    });
+  }
 
   if (hasWriteToken()) {
     attempts.push({
@@ -1209,6 +1243,9 @@ async function fetchCloudDataForRead() {
       if (attempt.parser === "api") {
         const payload = (await response.json()) || {};
         cloudData = extractCloudDataFromGist(payload);
+      } else if (attempt.parser === "worker") {
+        const payload = (await response.json()) || {};
+        cloudData = extractCloudDataFromWorkerPayload(payload);
       } else {
         const content = await response.text();
         cloudData = extractCloudDataFromRawContent(content);
@@ -1264,13 +1301,13 @@ async function syncProfilesFromCloud(options = {}) {
     if (announce) {
       if (cloudData.users.length > 0) {
         updateAuthHint(
-          hasWriteToken()
+          canWriteCloud()
             ? `Loaded ${state.users.length} shared profiles.`
             : `Loaded ${state.users.length} shared profiles (read-only, add token to allow creating shared profiles).`
         );
       } else {
         updateAuthHint(
-          hasWriteToken()
+          canWriteCloud()
             ? "No shared profiles yet. Create the first one."
             : "No shared profiles yet. Add a GitHub token to create shared profiles."
         );
@@ -1371,6 +1408,46 @@ function extractCloudDataFromGist(payload) {
   return null;
 }
 
+function extractCloudDataFromWorkerPayload(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  if (payload.cloudData && typeof payload.cloudData === "object") {
+    return sanitizeCloudDataObject(payload.cloudData);
+  }
+  return sanitizeCloudDataObject(payload);
+}
+
+function sanitizeCloudDataObject(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const data = createEmptyCloudData();
+
+  const rawUsers = Array.isArray(raw.users) ? raw.users : [];
+  const rawPins = raw.userPins && typeof raw.userPins === "object" ? raw.userPins : {};
+  for (const rawUser of rawUsers) {
+    const name = normalizeName(String(rawUser || ""));
+    const pin = sanitizePinInput(String(rawPins[name] || ""));
+    if (!name || !isValidPin(pin)) continue;
+    data.userPins[name] = pin;
+  }
+  if (Object.keys(data.userPins).length === 0) {
+    for (const [key, value] of Object.entries(rawPins)) {
+      const name = normalizeName(String(key || ""));
+      const pin = sanitizePinInput(String(value || ""));
+      if (!name || !isValidPin(pin)) continue;
+      data.userPins[name] = pin;
+    }
+  }
+  data.users = Object.keys(data.userPins).sort((a, b) => a.localeCompare(b));
+
+  data.personalEventsByUser = sanitizePersonalEventsByUser(
+    raw.personalEventsByUser && typeof raw.personalEventsByUser === "object"
+      ? raw.personalEventsByUser
+      : {}
+  );
+  const cleanShared = sanitizeSharedEvents(Array.isArray(raw.sharedEvents) ? raw.sharedEvents : []);
+  data.sharedEvents = cleanShared.length ? cleanShared : buildDefaultSharedEvents();
+  return data;
+}
+
 function applyCloudData(cloudData) {
   state.users = cloudData.users;
   state.userPins = cloudData.userPins;
@@ -1392,7 +1469,7 @@ function applyCloudData(cloudData) {
 
 async function saveProfileToCloud(name, pin) {
   if (!isCloudConfigured()) return false;
-  if (!hasWriteToken()) {
+  if (!canWriteCloud()) {
     state.lastCloudError = "missing token";
     return false;
   }
@@ -1411,7 +1488,7 @@ async function saveProfileToCloud(name, pin) {
 
 async function savePersonalEventsToCloud(userName) {
   if (!isCloudConfigured()) return false;
-  if (!hasWriteToken()) {
+  if (!canWriteCloud()) {
     state.lastCloudError = "missing token";
     return false;
   }
@@ -1433,7 +1510,7 @@ async function savePersonalEventsToCloud(userName) {
 
 async function saveSharedEventsToCloud() {
   if (!isCloudConfigured()) return false;
-  if (!hasWriteToken()) {
+  if (!canWriteCloud()) {
     state.lastCloudError = "missing token";
     return false;
   }
@@ -1455,6 +1532,12 @@ async function fetchCloudDataForWrite() {
 }
 
 async function writeCloudData(cloudData) {
+  const workerWriteEndpoint = getWorkerSyncWriteEndpoint();
+  if (workerWriteEndpoint) {
+    const workerSaved = await writeCloudDataViaWorker(workerWriteEndpoint, cloudData);
+    if (workerSaved) return true;
+  }
+
   try {
     const fileContent = JSON.stringify(
       {
@@ -1496,6 +1579,29 @@ async function writeCloudData(cloudData) {
     return true;
   } catch (error) {
     state.lastCloudError = "network error";
+    return false;
+  }
+}
+
+async function writeCloudDataViaWorker(endpoint, cloudData) {
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cloudData }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      state.lastCloudError =
+        typeof payload.error === "string" && payload.error.trim()
+          ? payload.error.trim()
+          : `worker write ${response.status}`;
+      return false;
+    }
+    state.lastCloudError = "";
+    return true;
+  } catch (error) {
+    state.lastCloudError = "worker network error";
     return false;
   }
 }
